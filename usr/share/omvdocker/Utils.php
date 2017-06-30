@@ -76,7 +76,7 @@ class OMVModuleDockerUtil
      */
     public static function stopDockerService()
     {
-        $cmd = 'ps aux | grep "/usr/bin/docker daemon" | grep -v grep | wc -l';
+        $cmd = 'ps aux | grep "/usr/bin/dockerd" | grep -v grep | wc -l';
         OMVUtil::exec($cmd, $out, $res);
 
         while ($out[0] > 0) {
@@ -85,7 +85,7 @@ class OMVModuleDockerUtil
             OMVUtil::exec($cmd, $out, $res);
             unset($out);
             sleep(1);
-            $cmd = 'ps aux | grep "/usr/bin/docker daemon" | grep -v grep | wc -l';
+            $cmd = 'ps aux | grep "/usr/bin/dockerd" | grep -v grep | wc -l';
             OMVUtil::exec($cmd, $out, $res);
         }
     }
