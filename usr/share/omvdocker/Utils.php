@@ -65,6 +65,7 @@ class OMVModuleDockerUtil
             $curl, array(
                 CURLOPT_RETURNTRANSFER => 1,
                 CURLOPT_TIMEOUT => 30,
+                CURLOPT_SSL_VERIFYHOST => 0,
                 CURLOPT_CONNECTTIMEOUT => 5
             )
         );
@@ -110,35 +111,6 @@ class OMVModuleDockerUtil
     }
 
     /**
-     * Returns an array with maclvan network names and their subnets
-     *
-     * @param int  $apiPort     Network port to use in API call
-     * @param bool $incDangling Flag to filter dangling images (not used)
-     *
-     * @return array $objects An array with macvlan names and subnets
-     *
-     */
-    public static function getMacVlanNetworks($apiPort, $incDangling)
-    {
-        $objects=array();
-        $url = "http://localhost:" . $apiPort . "/networks/?filters=%7B%22driver%22%3A%7B%22macvlan%22%3Atrue%7D%7D";
-        $response = OMVModuleDockerUtil::doApiCall($url);
-        $macvlan_data = json_decode($response);
-        $objects = array();
-        //Iterate over each macvlan object that the api returns
-        foreach ($macvlan_data as $item) {
-        //get the macvlan name
-            $tmp=array(
-                "name"      => $item->Name,
-                "description"    => $item->Name . " (" . $item->IPAM->Config[0]->Subnet . ")");
-        //pass the macvlan names to an array
-            array_push($objects, $tmp);
-        }
-        return $objects;
-    }
-
-
-    /**
      * Returns an array with Image objects on the system
      *
      * @param int  $apiPort     Network port to use in API call
@@ -150,7 +122,7 @@ class OMVModuleDockerUtil
     public static function getImages($apiPort, $incDangling)
     {
         $objects=array();
-        $url = "http://localhost:" . $apiPort . "/images/json?all=0";
+        $url = "https://hades.fritz.box:" . $apiPort . "/images/json?all=0";
         /*
         if ($incDangling) {
         $url .= "0";
@@ -192,7 +164,7 @@ class OMVModuleDockerUtil
     {
         $objects=array();
         $now = date("c");
-        $url = "http://localhost:" . $apiPort . "/images/json?all=0";
+        $url = "https://hades.fritz.box:" . $apiPort . "/images/json?all=0";
         $response = OMVModuleDockerUtil::doApiCall($url);
         $data = array();
         foreach (json_decode($response) as $item) {
@@ -233,7 +205,7 @@ class OMVModuleDockerUtil
     public static function getImage($id, $apiPort)
     {
         $objects = array();
-        $url = "http://localhost:" . $apiPort . "/images/json?all=1";
+        $url = "https://hades.fritz.box:" . $apiPort . "/images/json?all=1";
         $response = OMVModuleDockerUtil::doApiCall($url);
         $data = array();
         foreach (json_decode($response) as $item) {
@@ -254,7 +226,7 @@ class OMVModuleDockerUtil
     public static function getContainers($apiPort)
     {
         $objects = array();
-        $url = "http://localhost:" . $apiPort . "/containers/json?all=1";
+        $url = "https://hades.fritz.box:" . $apiPort . "/containers/json?all=1";
         $response = OMVModuleDockerUtil::doApiCall($url);
         $data = array();
         foreach (json_decode($response) as $item) {
@@ -293,10 +265,7 @@ class OMVModuleDockerUtil
                 "name" => $container->getName(),
                 "privileged" => $container->getPrivileged(),
                 "restartpolicy" => $container->getRestartPolicy(),
-                "maxretries" => $container->getMaxRetries(),
                 "networkmode" => ucfirst($container->getNetworkMode()),
-                "macvlan_network" => $container->getMacVlanContainerNetwork(),
-                "macvlan_ipaddress" => $container->getMacVlanContainerIpAddress(),
                 "envvars" => $image->getEnvVars(),
                 "cenvvars" => $container->getEnvironmentVariables(),
                 "exposedports" => $image->getPorts(),
@@ -305,7 +274,6 @@ class OMVModuleDockerUtil
                 "ports" => $ports,
                 "hasmounts" => $container->hasMounts(),
                 "volumesfrom" => $container->getVolumesFrom(),
-                "extraargs" => $container->getExtraArgs(),
                 "hostname" => $container->getHostName(),
                 "timesync" => $container->syncsTime(),
                 "imagevolumes" => $image->getVolumes());
@@ -326,7 +294,7 @@ class OMVModuleDockerUtil
     {
         $objects = array();
         $now = date("c");
-        $url = "http://localhost:" . $apiPort . "/containers/json?all=1";
+        $url = "https://hades.fritz.box:" . $apiPort . "/containers/json?all=1";
         $response = OMVModuleDockerUtil::doApiCall($url);
         foreach (json_decode($response) as $item) {
             $ports = "";
@@ -350,8 +318,6 @@ class OMVModuleDockerUtil
                 $state = "stopped";
             }
 
-            $extraargs = $item->Labels->omv_docker_extra_args; 
-
             array_push(
                 $objects,
                 array(
@@ -365,8 +331,7 @@ class OMVModuleDockerUtil
                         $now,
                         date("c", $item->Created)
                     ) . " ago",
-                    "state" => $state,
-                    "extraargs" => $extraargs
+                    "state" => $state
                 )
             );
         }
@@ -386,66 +351,13 @@ class OMVModuleDockerUtil
     public static function getContainer($id, $apiPort)
     {
         $objects = array();
-        $url = "http://localhost:" . $apiPort . "/containers/json?all=1";
+        $url = "https://hades.fritz.box:" . $apiPort . "/containers/json?all=1";
         $response = OMVModuleDockerUtil::doApiCall($url);
         $data = array();
         foreach (json_decode($response) as $item) {
             $data[substr($item->Id, 0, 12)] = $item;
         }
         return (new OMVModuleDockerContainer($data[$id]->Id, $data, $apiPort));
-    }
-
-    /**
-     * Returns an array with containers name that are connected requested network
-     *
-     * @param int  $apiPort     Network port to use in API call
-     * @param string $network   Network name to inspect in API call
-     *
-     * @return array $objects An array with Image objects
-     *
-     */
-    public static function getContainersInNetwork($apiPort, $network)
-    {
-        $objects=array();
-        $url = "http://127.0.0.1:" . $apiPort . "/networks/" . $network;
-        $response = OMVModuleDockerUtil::doApiCall($url);
-        $cdata = json_decode($response);
-        foreach ($cdata->Containers as $key=>$value) {
-            $tmp=$value->Name;
-            array_push($objects, $tmp);
-        }
-        return $objects;
-    }
-
-
-
-    /**
-     * Returns an array with Networks to be presented in the grid
-     *
-     * @param int  $apiPort     Network port to use in API call
-     *
-     * @return array $objects An array with Image objects
-     *
-     */
-    public static function getNetworkList($apiPort)
-    {
-        $objects=array();
-        $now = date("c");
-        $url = "http://localhost:" . $apiPort . "/networks";
-        $response = OMVModuleDockerUtil::doApiCall($url);
-        $data = array();
-        foreach (json_decode($response) as $item) {
-            $tmp = array(
-              "id" => substr($item->Id, 7, 12),
-              "name" => $item->Name,
-              "driver" => $item->Driver,
-              "scope" => $item->Scope,
-              "subnet" => $item->IPAM->Config[0]->Subnet,
-              "containers" => OMVModuleDockerUtil::getContainersInNetwork("42005",$item->Name)
-            );
-            array_push($objects, $tmp);
-        }
-        return $objects;
     }
 
     /**
@@ -525,7 +437,7 @@ class OMVModuleDockerUtil
      * @return void
      *
      */
-    public static function changeDockerSettings($context, $apiPort, $absPath)
+    public static function changeDockerSettings($context, $apiPort, $absPath, $enableTLS, $tlscertificateref)
     {
         self::$database = Database::getInstance();
         OMVModuleDockerUtil::stopDockerService();
@@ -575,13 +487,31 @@ class OMVModuleDockerUtil
         $result = rtrim($result);
         $result .= "\n\n" . '### Do not change these lines. They are added ' .
             'and updated by the OMV Docker GUI plugin.' . "\n";
-        $result .= 'OMVDOCKER_API="-H tcp://127.0.0.1:' . $apiPort .
+        $result .= 'OMVDOCKER_API="-H tcp://0.0.0.0:' . $apiPort .
             '"' . "\n";
         if (strcmp($absPath, "") !==0) {
             $result .= 'OMVDOCKER_IMAGE_PATH="-g /var/lib/docker/openmediavault"' . "\n";
         } else {
             $result .= 'OMVDOCKER_IMAGE_PATH=""' . "\n";
         }
+
+        if ($enableTLS)
+        {
+            $result .= 'OMVDOCKER_TLS=" --tls ';
+            $result .= ' --tlscert /etc/ssl/certs/openmediavault-' . $tlscertificateref .  '.crt';
+            //$result .= ' --tlscacert /etc/ssl/certs/openmediavault-' . $tlscertificateref .  '.crt'; 
+            //$result .= '  --tlscacert /etc/ssl/certs/openmediavault.crt';
+            $result .= ' --tlskey /etc/ssl/private/openmediavault-' . $tlscertificateref .  '.key"' . "\n";
+        }
+        else
+        {
+            $result .= '$OMVDOCKER_TLS=""' . "\n";
+        }
+ 
+        //$result .= '#DEBUG# :enableTLS:' . $enableTLS .  "\n";
+        //$result .= '#DEBUG# :cert:' . '/etc/ssl/certs/openmediavault-' . $tlscertificateref .  ".crt\n";
+        //$result .= '#DEBUG# :key:' . '/etc/ssl/private/openmediavault-' . $tlscertificateref .  ".key\n";
+
         $result .= '### Do not add any configuration below this line. It will be ' .
             'removed when the plugin is removed';
         file_put_contents("$fileName", $result);
@@ -644,52 +574,5 @@ class OMVModuleDockerUtil
 
         OMVModuleDockerUtil::startDockerService();
     }
-
-    function getContainersNotInSelectedNetworkList($apiPort, $selectednetwork, $incDangling)
-    {
-        $objects=array();
-        $ctplusnetworks=array();
-        $url = "http://127.0.0.1:" . $apiPort . "/containers/json?all=1";
-        $response = OMVModuleDockerUtil::doApiCall($url);
-        $cdata = json_decode($response,true);
-        foreach ($cdata as $item) {
-            $tmp=array(
-                "name" => ltrim($item['Names'][0], "/"),
-                "networks" => array_keys($item['NetworkSettings']['Networks']));
-            array_push($ctplusnetworks, $tmp);
-        }
-        foreach ($ctplusnetworks as $item) {
-            if (!in_array($selectednetwork,$item['networks'])) {
-                $tmp=array(
-                    "name" => $item['name']);
-                array_push($objects, $tmp);
-            }
-        }
-        return $objects;
-    }
-
-    function getContainersInSelectedNetworkList($apiPort, $selectednetwork, $incDangling)
-    {
-        $objects=array();
-        $ctplusnetworks=array();
-        $url = "http://127.0.0.1:" . $apiPort . "/containers/json?all=1";
-        $response = OMVModuleDockerUtil::doApiCall($url);
-        $cdata = json_decode($response,true);
-        foreach ($cdata as $item) {
-            $tmp=array(
-                "name" => ltrim($item['Names'][0], "/"),
-                "networks" => array_keys($item['NetworkSettings']['Networks']));
-            array_push($ctplusnetworks, $tmp);
-        }
-        foreach ($ctplusnetworks as $item) {
-            if (in_array($selectednetwork,$item['networks'])) {
-                $tmp=array(
-                    "name" => $item['name']);
-                array_push($objects, $tmp);
-            }
-        }
-        return $objects;
-    }
-
 
 }

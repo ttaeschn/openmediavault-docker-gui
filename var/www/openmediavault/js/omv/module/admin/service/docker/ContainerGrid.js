@@ -100,13 +100,6 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
         sortable: true,
         stateId: 'state',
         filter: 'list'
-    },{
-        xtype: "textcolumn",
-        text: _("EXTRA ARGUMENTS"),
-        dataIndex: 'extraargs',
-        sortable: false,
-        stateId: 'extraargs',
-        filter: 'string'
     }],
 
     initComponent: function() {
@@ -124,10 +117,7 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
                         { name: "state", type: "string" },
                         { name: "ports", type: "string" },
                         { name: "networkmode", type: "string" },
-                        { name: "macvlan_ipaddress", type: "string"},
-                        { name: "macvlan_network", type: "string"},
                         { name: "restartpolicy", type: "string" },
-                        { name: "maxretries", type: "integer"},
                         { name: "privileged", type: "boolean" },
                         { name: "exposedports", type: "array" },
                         { name: "envvars", type: "array" },
@@ -135,7 +125,6 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
                         { name: "portbindings", type: "array" },
                         { name: "name", type: "string" },
                         { name: "volumesfrom", type: "array" },
-                        { name: "extraargs", type: "string"},
                         { name: "hostname", type: "string" },
                         { name: "timesync", type: "boolean" },
                         { name: "imagevolumes", type: "array" }
@@ -165,38 +154,32 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
             handler: Ext.Function.bind(me.onCreateButton, me, [ me ]),
             scope: me
         },{
-            xtype: "splitbutton",
-            text: "Start",
+            id: me.getId() + "-start",
+            xtype: "button",
+            text: _("Start"),
             icon: "images/play.png",
             iconCls: Ext.baseCSSPrefix + "btn-icon-16x16",
-            scope: me,
-            menu: Ext.create("Ext.menu.Menu", {
-                items: [{
-                    id: me.getId() + "-start",
-                    text: _("Start"),
-                    disabled: true,
-                    iconCls: Ext.baseCSSPrefix + "btn-icon-16x16",
-                    icon: "images/play.png",
-                    handler: Ext.Function.bind(me.onStartButton, me, [ me ]),
-                    scope: me
-                },{
-                    id: me.getId() + "-stop",
-                    text: _("Stop"),
-                    disabled: true,
-                    iconCls: Ext.baseCSSPrefix + "btn-icon-16x16",
-                    icon: "images/docker_stop.png",
-                    handler: Ext.Function.bind(me.onStopButton, me, [ me ]),
-                    scope: me
-                },{
-                    id: me.getId() + "-restart",
-                    text: _("Restart"),
-                    disabled: true,
-                    iconCls: Ext.baseCSSPrefix + "btn-icon-16x16",
-                    icon: "images/undo.png",
-                    handler: Ext.Function.bind(me.onRestartButton, me, [ me ]),
-                    scope: me
-                }]
-            })
+            disabled: true,
+            handler: Ext.Function.bind(me.onStartButton, me, [ me ]),
+            scope: me
+        },{
+            id: me.getId() + "-stop",
+            xtype: "button",
+            text: _("Stop"),
+            icon: "images/docker_stop.png",
+            iconCls: Ext.baseCSSPrefix + "btn-icon-16x16",
+            disabled: true,
+            handler: Ext.Function.bind(me.onStopButton, me, [ me ]),
+            scope: me
+        },{
+            id: me.getId() + "-restart",
+            xtype: "button",
+            text: _("Restart"),
+            icon: "images/undo.png",
+            iconCls: Ext.baseCSSPrefix + "btn-icon-16x16",
+            disabled: true,
+            handler: Ext.Function.bind(me.onRestartButton, me, [ me ]),
+            scope: me
         },{
             id: me.getId() + "-copy",
             xtype: "button",
@@ -269,16 +252,6 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
             hidden: false,
             handler: Ext.Function.bind(me.onRefreshButton, me, [ me ]),
             scope: me
-        },{
-            id: me.getId() + "-clearlog",
-            xtype: "button",
-            text: _("Clear Log"),
-            icon: "images/trashcan.png",
-            iconCls: Ext.baseCSSPrefix + "btn-icon-16x16",
-            disabled: true,
-            hidden: false,
-            handler: Ext.Function.bind(me.onClearLogButton, me, [ me ]),
-            scope: me
         }]
     },
 
@@ -286,7 +259,7 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
         var me = this;
         if(me.hideTopToolbar)
             return;
-        var tbarBtnName = [ "create", "start", "stop", "restart", "copy", "modify", "details", "execute", "commit", "logs", "delete", "refresh", "clearlog" ];
+        var tbarBtnName = [ "create", "start", "stop", "restart", "copy", "modify", "details", "execute", "commit", "logs", "delete", "refresh" ];
         var tbarBtnDisabled = {
             "create": false,
             "start": false,
@@ -300,8 +273,7 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
             "commit": false,
             "logs": false,
             "delete": false,
-            "refresh": false,
-            "clearlog": false
+            "refresh": false
         };
         // Enable/disable buttons depending on the number of selected rows.
         if(records.length <= 0) {
@@ -509,45 +481,6 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
         });
     },
 
-    onClearLogButton: function() {
-        var me = this;
-        var sm = me.getSelectionModel();
-        var selRecords = sm.getSelection();
-        var record = selRecords[0];
-        var index;
-        var idList = "";
-        for(i = 0; i < selRecords.length; i++) {
-            if(i === 0) {
-                idList = selRecords[i].get("id");
-            } else {
-                idList = idList + " " + selRecords[i].get("id");
-            }
-        }
-        OMV.Rpc.request({
-            scope: me,
-            callback: function(id, success, response) {
-                sm.deselectAll();
-                me.store.load({
-                    scope: me,
-                    callback: function(records, operation, success) {
-                        for(i = 0; i < selRecords.length; i++) {
-                            index = me.store.find('name', selRecords[i].get("name"));
-                            sm.select(index, true);
-                        }
-                    }
-                });
-            },
-            relayErrors: false,
-            rpcData: {
-                service: "Docker",
-                method: "clearLog",
-                params: {
-                    id: idList
-                }
-            }
-        });
-    },
-
     onDetailsButton: function() {
         var me = this;
         var sm = me.getSelectionModel();
@@ -610,17 +543,15 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
                 var me = this;
 
                 return [{
-                    // xtype: "textareafield",
-                    xtype: "textarea",
+                    xtype: "textareafield",
                     name: "logs",
                     grow: false,
                     height: 620,
                     readOnly: true,
-                    cls: "x-form-textarea-monospaced"
-//                    fieldStyle: {
-  //                      fontFamily: "courier",
-    //                    fontSize: "12px"
-      //              }
+                    fieldStyle: {
+                        fontFamily: "courier",
+                        fontSize: "12px"
+                    }
                 }];
             }
         }).show();
@@ -694,16 +625,12 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
                             ports: response["exposedports"],
                             envvars: response["envvars"],
                             restartpolicy: response["restartpolicy"],
-                            maxretries: response["maxretries"],
                             privileged: response["privileged"],
                             networkmode: response["networkmode"],
-                            macvlan_network: response["macvlan_network"],
-                            macvlan_ipaddress: response["macvlan_ipaddress"],
                             portbindings: response["portbindings"],
                             bindmounts: response["bindmounts"],
                             cenvvars: response["cenvvars"],
                             copyVolumes: response["volumesfrom"],
-                            extraargs: response["extraargs"],
                             hostname: response["hostname"],
                             timesync: response["timesync"],
                             imagevolumes: response["imagevolumes"]
@@ -763,11 +690,8 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
                                                     ports: response["exposedports"],
                                                     envvars: response["envvars"],
                                                     restartpolicy: response["restartpolicy"],
-                                                    maxretries: response["maxretries"],
                                                     privileged: response["privileged"],
                                                     networkmode: response["networkmode"],
-                                                    macvlan_ipaddress: response["macvlan_ipaddress"],
-                                                    macvlan_network: response["macvlan_network"],
                                                     portbindings: response["portbindings"],
                                                     bindmounts: response["bindmounts"],
                                                     cenvvars: response["cenvvars"],
@@ -775,7 +699,6 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
                                                     hostname: response["hostname"],
                                                     timesync: response["timesync"],
                                                     imagevolumes: response["imagevolumes"],
-                                                    extraargs: response["extraargs"],
                                                     name: response["name"],
                                                     cid: response["id"],
                                                     action: "modify"
@@ -806,17 +729,13 @@ Ext.define("OMV.module.admin.service.docker.ContainerGrid", {
                                         ports: response["exposedports"],
                                         envvars: response["envvars"],
                                         restartpolicy: response["restartpolicy"],
-                                        maxretries: response["maxretries"],
                                         privileged: response["privileged"],
                                         networkmode: response["networkmode"],
-                                        macvlan_network: response["macvlan_network"],
-                                        macvlan_ipaddress: response["macvlan_ipaddress"],
                                         portbindings: response["portbindings"],
                                         bindmounts: response["bindmounts"],
                                         cenvvars: response["cenvvars"],
                                         copyVolumes: response["volumesfrom"],
                                         hostname: response["hostname"],
-                                        extraargs: response["extraargs"],
                                         timesync: response["timesync"],
                                         imagevolumes: response["imagevolumes"],
                                         name: response["name"],

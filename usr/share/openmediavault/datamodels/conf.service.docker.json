@@ -38,6 +38,12 @@
         },
         "cwarn": {
             "type": "boolean"
+        },
+        "enabletls":{
+             "type": "boolean"
+        },
+        "tlscertificateref":{
+            "type": "string"
         }
     }
 }

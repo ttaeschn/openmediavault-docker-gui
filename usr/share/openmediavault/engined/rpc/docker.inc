@@ -117,10 +117,6 @@ class OMVRpcServiceDocker extends ServiceAbstract
         $this->registerMethod("refreshContainers");
         $this->registerMethod("getContainerData");
 
-        $this->registerMethod("getNetworks");
-        $this->registerMethod("createNetwork");
-        $this->registerMethod("deleteNetwork");
-
         $this->registerMethod("getSettings");
         $this->registerMethod("setSettings");
         $this->registerMethod("getDetails");
@@ -132,12 +128,6 @@ class OMVRpcServiceDocker extends ServiceAbstract
         $this->registerMethod("getDockerRepo");
 
         $this->registerMethod("set");
-        $this->registerMethod("getMacVlan");
-        $this->registerMethod("clearLog");
-        $this->registerMethod("connectNetwork");
-        $this->registerMethod("disconnectNetwork");
-        $this->registerMethod("getContainersNotInSelectedNetwork");
-        $this->registerMethod("getContainersInSelectedNetwork");
     }
 
     public function set($params, $context)
@@ -157,30 +147,6 @@ class OMVRpcServiceDocker extends ServiceAbstract
         }
         return $arch;
     }
-
-    /**
-     * Get all Docker images
-     *
-     * @param array  $params  An associative array with all RPC call parameters
-     * @param string $context The context of the user maing the RPC call
-     *
-     * @return array $objects An array with all docker macvlan network names and their respective subnet
-     */
-    public function getMacVlan($params, $context)
-    {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $settings=$this->database->getAssoc($this->dataModelPath);
-
-        $objects = array();
-        $objects = OMVModuleDockerUtil::getMacVlanNetworks(
-            $settings['apiPort']
-        );
-        return $objects;
-    }
-
 
     /**
      * Get all Docker images
@@ -458,30 +424,9 @@ class OMVRpcServiceDocker extends ServiceAbstract
         $cmd = "docker run -d ";
 
         //Check if restart checkbox is enabled
-        //if ($params['restartpolicy']) {
-        //    $cmd .= "--restart=always ";
-        //}
-
-        switch ($params['restartpolicy']) {
-            case "always":
-                $cmd .= "--restart=always ";
-                break;
-            case "no":
-                $cmd .= "--restart=no ";
-                break;
-            case "unless-stopped":
-                $cmd .= "--restart=unless-stopped ";
-                break;
-            case "on-failure":
-                if (isset($params['maxretries'])) {
-                    $cmd .= "--restart=on-failure:" . $params['maxretries'] . " ";
-                } elseif (!isset($params['maxretries'])) {
-                    $cmd .= "--restart=on-failure ";
-                }
-                break;
+        if ($params['restart']) {
+            $cmd .= "--restart=always ";
         }
-
-
 
         //Check if privileged checkbox is enabled
         if ($params['privileged']) {
@@ -518,9 +463,6 @@ class OMVRpcServiceDocker extends ServiceAbstract
             break;
         case "None":
             $cmd .= "--net=none ";
-            break;
-        case "Macvlan":
-            $cmd .= "--net=" . $params['macvlan_network'] . " " . "--ip=" . $params['macvlan_ipaddress'] . " ";
             break;
         }
 
@@ -571,8 +513,6 @@ class OMVRpcServiceDocker extends ServiceAbstract
         //Check if extra arguments are supplied
         $extraArgs = trim($params['extraArgs']);
         if (!(strcmp($extraArgs, "") === 0)) {
-            //Store the extra command parameters in a container label as omv_docker_extra_args
-            $cmd .= "--label omv_docker_extra_args=" . "\"" . $extraArgs . "\" ";
             $cmd .= $extraArgs . " ";
         }
 
@@ -607,14 +547,10 @@ class OMVRpcServiceDocker extends ServiceAbstract
             $settings['apiPort']
         );
 
-        $restartpolicy = $container->getRestartPolicy();
-        $maxretries = $container->getMaxRetries();
-        //if (strcmp($container->getRestartPolicy(), "always") === 0) {
-         //   $restart = true;
-        //}
-        $networkMode = $container->getNetworkMode();
-        $macvlan_network = $container->getMacVlanContainerNetwork();
-        $macvlan_ipaddress = $container->getMacVlanContainerIpAddress();
+        $restart = false;
+        if (strcmp($container->getRestartPolicy(), "always") === 0) {
+            $restart = true;
+        }
         $portForwards = array();
         foreach ($container->getPortBindings() as $binding) {
             $customPort = "";
@@ -660,19 +596,15 @@ class OMVRpcServiceDocker extends ServiceAbstract
         }
 
         $old_params = array(
-            "restartpolicy" => $restartpolicy,
-            "maxretries" => $maxretries,
+            "restart" => $restart,
             "privileged" => $container->getPrivileged(),
             "timeSync" => $container->syncsTime(),
             "networkMode" => ucfirst($container->getNetworkMode()),
-            "macvlan_network" => $container->getMacVlanContainerNetwork(),
-            "macvlan_ipaddress" => $container->getMacVlanContainerIpAddress(),
             "portForwards" => $portForwards,
             "hostName" => $container->getHostName(),
             "envVars" => $envVars,
             "bindMounts" => $bindMounts,
             "volumes" => $container->getVolumesFrom(),
-            "extraargs" => $container->getExtraArgs(),
             "containerName" => $container->getName(),
             "image" => $container->getImage()
         );
@@ -780,31 +712,6 @@ class OMVRpcServiceDocker extends ServiceAbstract
         $cmd = "docker rm " . $params['id'] . " 2>&1";
         $process = new Process($cmd);
         $process->execute();
-    }
-
-    /**
-     * Clear the log on one or multiple containers
-     *
-     * @param array  $params  An associative array with all RPC call parameters
-     * @param string $context The context of the user maing the RPC call
-     *
-     * @return void
-     */
-    public function clearLog($params, $context)
-    {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $settings=$this->database->getAssoc($this->dataModelPath);
-        $ids = explode(" ", $params['id']);
-        foreach ($ids as $id) {
-            $container = OMVModuleDockerUtil::getContainer($id, $settings['apiPort']);
-            $logpath = $container->getLogPath();
-            $cmd = "cat /dev/null >" . $logpath;
-            $process = new Process($cmd);
-            $process->execute();
-        }
     }
 
     /**
@@ -997,10 +904,7 @@ class OMVRpcServiceDocker extends ServiceAbstract
             "name" => $container->getName(),
             "privileged" => $container->getPrivileged(),
             "restartpolicy" => $container->getRestartPolicy(),
-            "maxretries" => $container->getMaxRetries(),
             "networkmode" => ucfirst($container->getNetworkMode()),
-            "macvlan_network" => $container->getMacVlanContainerNetwork(),
-            "macvlan_ipaddress" => $container->getMacVlanContainerIpAddress(),
             "envvars" => $image->getEnvVars(),
             "cenvvars" => $container->getEnvironmentVariables(),
             "exposedports" => $image->getPorts(),
@@ -1009,90 +913,12 @@ class OMVRpcServiceDocker extends ServiceAbstract
             "ports" => $ports,
             "hasmounts" => $container->hasMounts(),
             "volumesfrom" => $container->getVolumesFrom(),
-            "extraargs" => $container->getExtraArgs(),
             "hostname" => $container->getHostName(),
             "timesync" => $container->syncsTime(),
             "imagevolumes" => $image->getVolumes()
         );
         return $object;
     }
-
-    /**
-     * Get all Docker networks
-     *
-     * @param array  $params  An associative array with all RPC call parameters
-     * @param string $context The context of the user maing the RPC call
-     *
-     * @return array $objects An array with all Docker networks
-     */
-    public function getNetworks($params, $context)
-    {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $settings=$this->database->getAssoc($this->dataModelPath);
-
-        $objects = array();
-        if ($settings['enabled']) {
-            $objects = OMVModuleDockerUtil::getNetworkList(
-                $settings['apiPort']
-            );
-        }
-        return $objects;
-    }
-
-    /**
-     * Create a new Docker network
-     *
-     * @param array  $params  An associative array with all RPC call parameters
-     * @param string $context The context of the user maing the RPC call
-     *
-     * @return void
-     */
-    public function createNetwork($params, $context)
-    {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $cmd = "docker network create " .
-        "-d {$params['driver']} --subnet={$params['subnet']} ".
-        "--gateway={$params['gateway']} -o parent={$params['parent']} " .
-        "{$params['name']}";
-
-        $process = new Process($cmd);
-        $process->execute();
-    }
-
-    /**
-     * Deletes a Docker network
-     *
-     * @param array  $params  An associative array with all RPC call parameters
-     * @param string $context The context of the user maing the RPC call
-     *
-     * @return void
-     */
-    public function deleteNetwork($params, $context)
-    {
-        $this->validateMethodParams(
-            $params,
-            '{' .
-            '"type": "object",' .
-            '"properties": {' .
-            '"name": { "type" : "string" }' .
-            '}}'
-        );
-
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $cmd = "docker network rm {$params['name']}";
-        $process = new Process($cmd);
-        $process->execute();
-    }
-
 
     /**
      * Retrieve all plugin settings
@@ -1136,6 +962,10 @@ class OMVRpcServiceDocker extends ServiceAbstract
         $settings["versionInfo"] = $dockerVersionInfo;
         $settings["sharedfolderref"] = $settings["sharedfolderref"];
         $settings["cwarn"] = boolval($settings["cwarn"]);
+        $settings["enabletls"] = boolval($settings["enabletls"]);
+        $settings["tlscertificateref"] = $settings["tlscertificateref"];
+
+
 
         return $settings;
     }
@@ -1167,7 +997,9 @@ class OMVRpcServiceDocker extends ServiceAbstract
             '"uuid": { "type": "string" },' .
             '"orgpath": { "type": "string" },' .
             '"destpath": { "type": "string" },' .
-            '"cwarn": { "type": "boolean"}' .
+            '"cwarn": { "type": "boolean"},' .
+            '"tlscertificateref": { "type": "string" },' .
+            '"enabletls": { "type": "boolean"}' .
             '}}'
         );
 
@@ -1199,7 +1031,7 @@ class OMVRpcServiceDocker extends ServiceAbstract
                 );
                 $sharedFolder = $params['sharedfolderref'];
             }
-            OMVModuleDockerUtil::changeDockerSettings($context, $newApiPort, $absPath);
+            OMVModuleDockerUtil::changeDockerSettings($context, $newApiPort, $absPath, $params['enabletls'], $params['tlscertificateref']);
         }
 
         //Get the possibly changed settings object
@@ -1211,13 +1043,22 @@ class OMVRpcServiceDocker extends ServiceAbstract
             $tmpMntent = "";
         }
 
+        if (strcmp($params['tlscertificateref'], "") === 0) {
+            $tlsCertificateRefString = $oldSettings['tlscertificateref'];
+        } else {
+            $tlsCertificateRefString = $params['tlscertificateref'];
+        }
+
         // Update the configuration object.
         $object = array(
             "dockermntent" => $tmpMntent,
             "enabled" => array_boolval($params, "enabled"),
             "apiPort" => $newApiPort,
             "sharedfolderref" => $sharedFolder,
-            "cwarn" => array_boolval($params, "cwarn")
+            "cwarn" => array_boolval($params, "cwarn"),
+            "enabletls" => array_boolval($params, "enabletls"),
+            //"tlscertificateref" => $tlscertificateref
+            "tlscertificateref" => $tlsCertificateRefString
         );
 
         $config = new ConfigObject($this->dataModelPath);
@@ -1701,101 +1542,5 @@ class OMVRpcServiceDocker extends ServiceAbstract
     }
 
     //throw new OMVModuleDockerException($cmd);
-    
-    /**
-     * Connect the selected container to a specific docker network
-     *
-     * @param array  $params  An associative array with all RPC call parameters
-     * @param string $context The context of the user maing the RPC call
-     *
-     * @return array $object An associative array with all the new settings
-     */
-    public function connectNetwork($params, $context)
-    {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        if (empty($params['ipaddress'])) {
-            $cmd = "docker network connect " . $params['networkname'] . " " . $params['containername'] . " 2>&1";
-        } elseif (isset($params['ipaddress'])) {
-            $cmd = "docker network connect " . "--ip " . $params['ipaddress'] . " " . $params['networkname'] . " " . $params['containername'] . " 2>&1";
-        }
-        $process = new Process($cmd);
-        $process->execute($out);
-        return array("details" => implode("\n\r", $out));
-    }
-
-    /**
-     * Disconnect the selected container to a specific docker network
-     *
-     * @param array  $params  An associative array with all RPC call parameters
-     * @param string $context The context of the user maing the RPC call
-     *
-     * @return array $object An associative array with all the new settings
-     */
-    public function disconnectNetwork($params, $context)
-    {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-        $cmd = "docker network disconnect " . $params['networkname'] . " " . $params['containername'] . " 2>&1";
-        $process = new Process($cmd);
-        $process->execute($out);
-        return array("details" => implode("\n\r", $out));
-    }
-
-
-
-    /**
-     * Get all the containers that are not connected to the current selected network
-     *
-     * @param array  $params  An associative array with all RPC call parameters
-     * @param string $context The context of the user maing the RPC call
-     *
-     * @return array $object An associative array with all the containers name
-     */
-    public function getContainersNotInSelectedNetwork($params, $context)
-    {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-
-        $objects = array();
-        $settings=$this->database->getAssoc($this->dataModelPath);
-        if ($settings['enabled']) {
-            $objects = OMVModuleDockerUtil::getContainersNotInSelectedNetworkList(
-                $settings['apiPort'],$params['selectednetwork']
-            );
-        }
-        return $objects;
-    }
-
-    /**
-     * Get all the containers that are connected to the current selected network
-     *
-     * @param array  $params  An associative array with all RPC call parameters
-     * @param string $context The context of the user maing the RPC call
-     *
-     * @return array $object An associative array with all the containers name
-     */
-    public function getContainersInSelectedNetwork($params, $context)
-    {
-        $this->validateMethodContext(
-            $context,
-            array("role" => OMV_ROLE_ADMINISTRATOR)
-        );
-
-        $objects = array();
-        $settings=$this->database->getAssoc($this->dataModelPath);
-        if ($settings['enabled']) {
-            $objects = OMVModuleDockerUtil::getContainersInSelectedNetworkList(
-                $settings['apiPort'],$params['selectednetwork']
-            );
-        }
-        return $objects;
-    }
-
 }
+

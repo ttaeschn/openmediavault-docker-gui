@@ -31,7 +31,19 @@ Ext.define("OMV.module.admin.service.docker.Settings", {
     rpcGetMethod: "getSettings",
     rpcSetMethod: "setSettings",
     plugins: [{
-        ptype: "configobject"
+        ptype: "configobject",
+        correlations: [{
+            name: [
+                "tlscertificateref"
+            ],
+            conditions: [
+                { name: "enabletls", value: true }
+            ],
+            properties: [
+                "!allowBlank",
+                "!readOnly"
+            ]
+        }]
     }],
 
     uuid: "",
@@ -49,7 +61,6 @@ Ext.define("OMV.module.admin.service.docker.Settings", {
             var overviewPanel = parent.down("panel[title=" + _("Overview") + "]");
             var settingsPanel = parent.down("panel[title=" + _("Settings") + "]");
             var repoPanel = parent.down("panel[title=" + _("Docker images repo") + "]");
-            var networksPanel = parent.down("panel[title=" + _("Networks") + "]");
             var dockerVersion = settingsPanel.findField("version").getValue();
             var checked = settingsPanel.findField("enabled").checked
             settingsPanel.findField("destpath").setValue(settingsPanel.findField("sharedfolderref").getValue());
@@ -69,17 +80,12 @@ Ext.define("OMV.module.admin.service.docker.Settings", {
                     repoPanel.tab.show();
                     repoPanel.enable();
                     repoPanel.doReload();
-                    networksPanel.tab.show();
-                    networksPanel.enable();
-                    networksPanel.doReload();
                     parent.setActiveTab(overviewPanel);
                 } else {
                     overviewPanel.disable();
                     overviewPanel.tab.hide();
                     repoPanel.disable();
                     repoPanel.tab.hide();
-                    networksPanel.disable();
-                    networksPanel.tab.hide();
                     OMV.Rpc.request({
                         scope: me,
                         callback: function(id, success, response) {
@@ -244,6 +250,29 @@ Ext.define("OMV.module.admin.service.docker.Settings", {
 
                         }
                     }
+                }]
+            }]
+	},{
+            xtype: "fieldset",
+            title: _("TLS Encryption"),
+            fieldDefaults: {
+                labelSeparator: ""
+            },
+            items: [
+            {
+               xtype: "checkbox",
+                name: "enabletls",
+                boxLabel: _("Enable TLS for API interface")
+        },{
+                xtype: "sslcertificatecombo",
+                name: "tlscertificateref",
+                fieldLabel: _("Certificate"),
+                allowNone: true,
+                allowBlank: true,
+                readOnly: false,
+                plugins: [{
+                    ptype: "fieldinfo",
+                    text: _("The SSL certificate.")
                 }]
             }]
         },{
